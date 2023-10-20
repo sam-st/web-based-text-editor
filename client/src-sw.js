@@ -1,13 +1,13 @@
-// Import necessary Workbox modules and plugins
-const { offlineFallback, warmStrategyCache } = require('workbox-recipes');
-const { CacheFirst } = require('workbox-strategies');
-const { registerRoute } = require('workbox-routing');
-const { CacheableResponsePlugin } = require('workbox-cacheable-response');
-const { ExpirationPlugin } = require('workbox-expiration');
-const { precacheAndRoute } = require('workbox-precaching/precacheAndRoute');
+import { precacheAndRoute } from 'workbox-precaching';
+import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
+import { registerRoute, setCatchHandler } from 'workbox-routing';
+import { CacheableResponsePlugin } from 'workbox-cacheable-response';
+import { ExpirationPlugin } from 'workbox-expiration';
+import { offlineFallback, warmStrategyCache } from 'workbox-recipes';
 
 precacheAndRoute(self.__WB_MANIFEST);
 
+// Configure a CacheFirst strategy for pages
 const pageCache = new CacheFirst({
   cacheName: 'page-cache',
   plugins: [
@@ -15,33 +15,37 @@ const pageCache = new CacheFirst({
       statuses: [0, 200],
     }),
     new ExpirationPlugin({
-      maxAgeSeconds: 30 * 24 * 60 * 60,
+      maxAgeSeconds: 30 * 24 * 60 * 60, // Cache for 30 days
     }),
   ],
 });
 
+// Warm the page cache with specified URLs
 warmStrategyCache({
   urls: ['/index.html', '/'],
   strategy: pageCache,
 });
 
-const assetsCache = new CacheFirst({
-  cacheName: 'assets-cache',
+// Register the CacheFirst strategy for navigation requests
+registerRoute(({ request }) => request.mode === 'navigate', pageCache);
+
+// Configure a StaleWhileRevalidate strategy for assets
+const assetCache = new StaleWhileRevalidate({
+  cacheName: 'asset-cache',
   plugins: [
     new CacheableResponsePlugin({
       statuses: [0, 200],
     }),
-    new ExpirationPlugin({
-      maxAgeSeconds: 30 * 24 * 60 * 60,
-    }),
   ],
 });
 
-// TODO: Implement asset caching
+// Register the StaleWhileRevalidate strategy for assets
 registerRoute(
-  ({ request }) =>
-    request.destination === 'style' || request.destination === 'script' || request.destination === 'image',
-  assetsCache
+  ({ request }) => ['style', 'script', 'worker'].includes(request.destination),
+  assetCache
 );
 
-registerRoute(({ request }) => request.mode === 'navigate', pageCache);
+// Handle offline requests with a custom strategy
+setCatchHandler(({ event }) => {
+  return offlineFallback({ event });
+});
